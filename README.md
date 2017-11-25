@@ -1,0 +1,1 @@
+The implementation is based on the algorithms mentioned in the conference paper titled ["Optimizing Memory Efficiency for Convolution Kernels on Kepler GPUs"](https://arxiv.org/abs/1705.10591) which was accepted at DAC'17.
