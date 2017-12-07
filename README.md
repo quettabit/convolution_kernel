@@ -10,7 +10,7 @@ Our implementation of the convolution kernel is based on the algorithms mentione
 
 Our implementation is benchmarked against the single-precision general matrix multiplication(SGEMM) based convolution kernel  available in NVIDIA's cuDNN library with the help of `nvprof`.
 
-Special thanks to [Peter Goldsborogh](https://github.com/goldsborough) for his [blogpost](http://www.goldsborough.me/cuda/ml/cudnn/c++/2017/10/01/14-37-23-convolutions_with_cudnn/) and [gist](https://gist.github.com/goldsborough/865e6717e64fbae75cdaf6c9914a130d) which explained the usage of convolution algorithm routine available in the cuDNN library. Without his work, It would have been a tough time for me battling with the cuDNN developer guide to benchmark our kernel.
+Special thanks to [Peter Goldsborogh](https://github.com/goldsborough) for his [blogpost](http://www.goldsborough.me/cuda/ml/cudnn/c++/2017/10/01/14-37-23-convolutions_with_cudnn/) and [gist](https://gist.github.com/goldsborough/865e6717e64fbae75cdaf6c9914a130d) which explained the usage of convolution algorithm routine available in the cuDNN library. Without his work, It would have been a tough time for us battling with the cuDNN developer guide to benchmark our kernel.
 
 #### Benchmarking Environment
 
