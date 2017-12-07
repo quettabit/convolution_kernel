@@ -2,7 +2,7 @@
 
 During the training of Convolutional Neural Networks (CNNs), the convolutional layer is the most time consuming layer. So, we wanted to accelerate the forward pass convolution operation on GPUs which would obviously reduce the time taken in the convolutional layer.
 
-Researchers are actively working on different ways to reduce the time taken by different convolution methods like Winograd algorithm, FFT based convolution etc.,
+Researchers are actively working on different ways to reduce the time complexity of different convolution methods including Winograd algorithm, FFT based convolution etc.,
 
 Based on the literature survey, we found that very few researchers are working on accelerating the general matrix multiplication(GEMM) based convolution by the usage of efficient memory access patterns. On noticing it, we planned to implement and verify any one of their techniques.
 
