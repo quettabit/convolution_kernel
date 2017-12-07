@@ -1,10 +1,22 @@
 #include <cuda_runtime.h>
 #include <iostream>
+#include <vector>
+#include <utility>
 #include <stdio.h>
 #include <math.h>
 using namespace std;
 #define K 3
-
+#define BLCH 8
+#define BLCW 32
+#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
+{
+   if (code != cudaSuccess)
+   {
+      fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+      if (abort) exit(code);
+   }
+}
 // declaration of constant memory where the fiter values are stored
 __constant__ float cm[K*K];
 
@@ -41,17 +53,17 @@ __device__ void conv(const float* gm,
             boundary check would be needed for the blocks that act on the bottom most partition of the input image to prevent it from prefetching out of image values.
         */
         float reg;
-        float *regArr = new float[k];
+        float regArr[K];
         if(i <= stopPrefetchRowID){
             reg = gm[i * iw + gID];
             if(tID == lastActiveThreadID){
                 for(int j=1; j<=k-1; j++){
-                    regArr[j] = gm[i * iw + gID + j];
+                    regArr[j] = gm[(i * iw) + gID + j];
                 }
             }
         }
         // load k * k pixels above the current cell
-        float *imgPixels = new float[k*k];
+        float imgPixels[K*K];
         for(int r=i-k; r<i; r++){
             for(int c=0; c<k; c++){
                 /* translate the indices to [0,k] using r - (i-k) as imgPixels is of size k*k */
@@ -65,6 +77,9 @@ __device__ void conv(const float* gm,
         }
         //place the convolvedCell value into convolvedMatrix
         int cID = ( ( (rel_row * bh) + (i-k) ) * cw )+( rel_col * nT )+tID;
+        if(cID < 0 || cID >= ch*cw ) {
+            printf("cID : %d, tID : %d, gID : %d\n", cID, tID, gID );
+        }
         convolved[cID] = convolvedCell;
         __syncthreads();
         if(i <= stopPrefetchRowID){
@@ -116,7 +131,8 @@ __global__ void conv_kernel(const float* gm,
     }
 
     // ---------------- Load k rows from GM into SM ----------------------
-    extern __shared__ float sm[];
+
+    __shared__ float sm[ (BLCH + K - 1) * (BLCW + K - 1) ];
     // rel_row and rel_col maps the Thread Block to appropriate position
     int rel_row = bID / nBx;
     int rel_col = bID % nBx;
@@ -133,7 +149,7 @@ __global__ void conv_kernel(const float* gm,
         */
         if(!isRightBorder && tID == nT-1){
             for(int j=1; j<=k-1; j++){
-                sID = i *smW + tID + j;
+                sID = (i * smW) + tID + j;
                 sm[sID] = gm[i * iw + gID + j];
             }
         }
@@ -197,12 +213,14 @@ int main(int argc, char **argv){
         1. the value of k(filter size) should be less than blcH and blcW
         2. stride value(s) should be 1
     */
-    int imgH = 20;
-    int imgW = 20;
-    int blcH = 10;
-    int blcW = 10;
+    int imgH = 2048;
+    int imgW = 2048;
+    int blcH = BLCH;
+    int blcW = BLCW;
     int k    = K;
     int s    = 1;
+    int nB   = (imgH * imgW) / (blcH * blcW);
+    int nT   = blcW;
     int imgDims = imgH * imgW;
     int imgSize = imgDims * sizeof(float);
     // create host array that can hold pixel intensity values
@@ -212,8 +230,8 @@ int main(int argc, char **argv){
     }
     // create device array that can hold pixel intensity values in GPU GM
     float *d_img;
-    cudaMalloc((void **) &d_img, imgSize );
-    cudaMemcpy(d_img, h_img, imgSize, cudaMemcpyHostToDevice);
+    gpuErrchk(cudaMalloc((void **) &d_img, imgSize ));
+    gpuErrchk(cudaMemcpy(d_img, h_img, imgSize, cudaMemcpyHostToDevice));
     // create filter and copy to constant memory
     int filterDims = k * k;
     int filterSize = filterDims * sizeof(float);
@@ -221,7 +239,7 @@ int main(int argc, char **argv){
     for(int i=0; i<filterDims; i++){
         filter[i] = 0.5;
     }
-    cudaMemcpyToSymbol(cm, filter, filterSize);
+    gpuErrchk(cudaMemcpyToSymbol(cm, filter, filterSize));
     // create host and device array that holds the convoluted matrix
     int convH = ( (imgH - k) / s ) + 1;
     int convW = convH;
@@ -232,25 +250,34 @@ int main(int argc, char **argv){
         h_convolved[i] = 0;
     }
     float *d_convolved;
-    cudaMalloc((void **) &d_convolved, convSize);
-    cudaMemcpy(d_convolved, h_convolved, convSize, cudaMemcpyHostToDevice);
-    // calculate shared memory size
+    gpuErrchk(cudaMalloc((void **) &d_convolved, convSize));
+    gpuErrchk(cudaMemcpy(d_convolved, h_convolved,
+                          convSize, cudaMemcpyHostToDevice));
+    // calculate shared memory dimensions
     int smH = blcH + k - 1;
     int smW = blcW + k - 1;
-    int smSize = smH * smW * sizeof(float);
     // call the kernel
-    conv_kernel<<<4, 10, smSize>>>(d_img, d_convolved,
-                                    blcH, blcW,
-                                    imgH, imgW,
-                                    convH, convW,
-                                    smH, smW,
-                                    k);
-    cudaMemcpy(h_convolved, d_convolved, convSize, cudaMemcpyDeviceToHost);
+    conv_kernel<<<nB, nT>>>(d_img, d_convolved,
+                                blcH, blcW,
+                                imgH, imgW,
+                                convH, convW,
+                                smH, smW,
+                                k);
+    gpuErrchk(cudaMemcpy(h_convolved, d_convolved,
+                            convSize, cudaMemcpyDeviceToHost));
+    vector<pair<int,int> > miss;
     for(int i=0; i<convH; i++){
         for(int j=0; j<convW; j++){
-            cout<<h_convolved[i*convW +j]<<" ";
+            //cout<<h_convolved[i*convW +j]<<" ";
+            if(h_convolved[i*convW +j] != 4.5){
+                miss.push_back(make_pair(i,j));
+            }
         }
-        cout<<"\n";
+        //cout<<"\n";
+    }
+    cout<<miss.size()<<"\n";
+    for(int i=0;i<miss.size();i++){
+        cout<<miss[i].first<<","<<miss[i].second<<"\n";
     }
     cudaDeviceReset();
     delete h_img;
