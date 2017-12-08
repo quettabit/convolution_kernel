@@ -45,4 +45,4 @@ For a stride value of `1`, a filter dimension of `3*3` and number of channels to
 | Kernel B | 512*512 | 955.65 micro.secs |
 
 
-From the above table, it can be clearly seen that `Kernel A` outperforms `Kernel B` in the time taken for computation by a reduction of ~50%.
+From the above table, it can be clearly seen that `Kernel A` outperforms `Kernel B` by a ~50% reduction in the time taken for computation.
